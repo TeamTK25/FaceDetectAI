@@ -94,7 +94,3 @@ detection-face/
 ```bash
 python -m pytest tests/test_api.py -v
 ```
-
-## License
-
-MIT License
