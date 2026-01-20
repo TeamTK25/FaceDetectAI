@@ -219,9 +219,13 @@ async def add_face(
     name: Optional[str] = Form(None)
 ):
     """
-    Add a new face to the database
+    Add a new face to the database with security checks.
     
-    Extracts face embedding from image and stores it with user_id.
+    Processing Steps:
+    1. Face Detection & Alignment (MTCNN)
+    2. Anti-Spoofing Check (Silent-FAS)
+    3. Identity Deduplication (FR Search)
+    4. Store in database
     """
     # Read image
     contents = await file.read()
@@ -231,12 +235,9 @@ async def add_face(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
     
-    # Get detector and recognizer (optimized pipeline)
+    # --- Step 1: Face Detection & Alignment ---
     detector = get_face_detector()
-    recognizer = get_face_recognizer()
-    
     try:
-        # Use MTCNN for detection + alignment
         aligned_result = detector.get_largest_aligned_face(image)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
@@ -246,18 +247,45 @@ async def add_face(
     
     aligned_face, detection = aligned_result
     
-    # Extract embedding directly (no redundant detection)
+    # --- Step 2: Anti-Spoofing Check (FAS) ---
+    fas_predictor = get_fas_predictor()
+    # FAS check on original image with detection box
+    fas_res = fas_predictor.predict(image) 
+    
+    if not fas_res['is_real'] or fas_res['score'] < config.FAS_ACCEPT_THRESHOLD:
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Face Anti-Spoofing failed (Score: {fas_res['score']:.4f}). Registration must be done with a live person."
+        )
+    
+    # --- Step 3: Identity Deduplication (FR Search) ---
+    recognizer = get_face_recognizer()
     embedding = recognizer.get_embedding_direct(aligned_face)
     if embedding is None:
         raise HTTPException(status_code=500, detail="Failed to extract face embedding")
-    
-    embedding = embedding.tolist()
-    
-    # Store in database
+        
     db = get_face_database()
+    all_faces = db.get_all_embeddings()
+    
+    for face_record in all_faces:
+        # Avoid comparing with self if updating (though this endpoint is for NEW adds)
+        if face_record['user_id'] == user_id:
+            continue
+            
+        similarity = recognizer.compute_similarity(embedding, face_record['embedding'])
+        if similarity >= config.FR_THRESHOLD:
+            # Found a match in database
+            matched_name = face_record.get('name') or face_record['user_id']
+            raise HTTPException(
+                status_code=409, 
+                detail=f"Duplicate Identity: This face is already registered to user '{matched_name}'."
+            )
+    
+    # --- Step 4: Store in Database ---
+    embedding_list = embedding.tolist()
     result = db.add_face(
         user_id=user_id,
-        embedding=embedding,
+        embedding=embedding_list,
         name=name
     )
     
@@ -266,7 +294,7 @@ async def add_face(
     
     return AddFaceResponse(
         success=True,
-        message=result['message'],
+        message="Face profile secured and registered successfully.",
         user_id=user_id,
         id=result.get('id')
     )
