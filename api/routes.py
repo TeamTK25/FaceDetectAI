@@ -17,7 +17,8 @@ from .schemas import (
     RecognizeFaceResponse, RecognitionMatch,
     AddFaceResponse, GetFaceResponse, UpdateFaceResponse, DeleteFaceResponse,
     HealthResponse, MobileCheckinResponse,
-    FASCheckinResponse, FASCheckinStep
+    FASCheckinResponse, FASCheckinStep,
+    ConfigUpdate, ConfigResponse
 )
 
 from models.face_detector import get_face_detector
@@ -30,6 +31,7 @@ from utils.geo_utils import calculate_distance
 import config
 from datetime import datetime
 from models.checkin_logger import get_checkin_logger
+from utils.config_utils import update_config_value, load_dynamic_config
 
 router = APIRouter()
 
@@ -922,3 +924,43 @@ async def get_stream_stats():
         'stats': processor.get_stats()
     }
 
+
+# =============================================================================
+# Configuration Endpoints
+# =============================================================================
+
+@router.get("/config", response_model=ConfigResponse)
+async def get_config():
+    """
+    Get current geolocation configuration
+    """
+    return ConfigResponse(
+        success=True,
+        message="Configuration retrieved successfully",
+        company_location=list(config.COMPANY_LOCATION),
+        max_checkin_distance=config.MAX_CHECKIN_DISTANCE
+    )
+
+
+@router.post("/config", response_model=ConfigResponse)
+async def update_config(update: ConfigUpdate):
+    """
+    Update geolocation configuration
+    """
+    if update.company_location is not None:
+        if len(update.company_location) != 2:
+            raise HTTPException(status_code=400, detail="company_location must be [latitude, longitude]")
+        
+        update_config_value("COMPANY_LOCATION", update.company_location)
+        config.COMPANY_LOCATION = tuple(update.company_location)
+    
+    if update.max_checkin_distance is not None:
+        update_config_value("MAX_CHECKIN_DISTANCE", update.max_checkin_distance)
+        config.MAX_CHECKIN_DISTANCE = update.max_checkin_distance
+    
+    return ConfigResponse(
+        success=True,
+        message="Configuration updated successfully",
+        company_location=list(config.COMPANY_LOCATION),
+        max_checkin_distance=config.MAX_CHECKIN_DISTANCE
+    )

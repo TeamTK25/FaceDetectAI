@@ -196,4 +196,19 @@ class FASCheckinResponse(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
+# ==================== Config Models ====================
+
+class ConfigUpdate(BaseModel):
+    """Request model for updating configuration"""
+    company_location: Optional[List[float]] = Field([21.0285, 105.8542], description="[Latitude, Longitude]")
+    max_checkin_distance: Optional[float] = Field(1000.0, description="Maximum distance in meters")
+
+class ConfigResponse(BaseModel):
+    """Response model for configuration"""
+    success: bool
+    message: str
+    company_location: List[float]
+    max_checkin_distance: float
+
+
 
