@@ -4,6 +4,17 @@ Hệ thống nhận diện khuôn mặt và chấm công sử dụng **InsightFa
 
 ---
 
+## Mục lục
+- [📁 Cấu trúc thư mục](#-cấu-trúc-thư-mục)
+- [🧠 Cấu trúc Model](#-cấu-trúc-model)
+- [🔄 Luồng xử lý](#-luồng-xử-lý)
+- [🔌 API Endpoints](#-api-endpoints)
+- [🚀 Cách sử dụng (Local)](#-cách-sử-dụng-local)
+- [🐳 Chạy bằng Docker (Mobile)](#-chạy-bằng-docker-mobile)
+- [⚙️ Cấu hình (config.py)](#-cấu-hình-configpy)
+
+---
+
 ## 📁 Cấu trúc thư mục
 
 ```
@@ -109,7 +120,6 @@ FaceDetectAI/
 Kiểm tra trạng thái hệ thống.
 
 ```json
-// Response
 {
   "status": "healthy",
   "models_loaded": true,
@@ -130,7 +140,6 @@ Kiểm tra trạng thái hệ thống.
 | `name` | String | ❌ | Tên hiển thị |
 
 ```json
-// Response
 {
   "success": true,
   "message": "Face added for user user123",
@@ -144,7 +153,6 @@ Kiểm tra trạng thái hệ thống.
 Lấy thông tin khuôn mặt đã đăng ký.
 
 ```json
-// Response
 {
   "user_id": "user123",
   "name": "Nguyen Van A",
@@ -158,7 +166,6 @@ Lấy thông tin khuôn mặt đã đăng ký.
 Xóa khuôn mặt khỏi database.
 
 ```json
-// Response
 {
   "success": true,
   "message": "Face deleted for user user123"
@@ -179,7 +186,6 @@ Chấm công với xác thực khuôn mặt + GPS.
 | `expected_user_id` | String | ❌ | ID người dùng mong đợi |
 
 ```json
-// Response
 {
   "success": true,
   "user_id": "user123",
@@ -196,7 +202,6 @@ Chấm công với xác thực khuôn mặt + GPS.
 Lấy cấu hình vị trí công ty và khoảng cách check-in hiện tại.
 
 ```json
-// Response
 {
   "success": true,
   "message": "Configuration retrieved successfully",
@@ -225,7 +230,6 @@ Cập nhật cấu hình vị trí công ty và khoảng cách check-in.
 ```
 
 ```json
-// Response
 {
   "success": true,
   "message": "Configuration updated successfully",
@@ -236,7 +240,7 @@ Cập nhật cấu hình vị trí công ty và khoảng cách check-in.
 
 ---
 
-## 🚀 Cách sử dụng
+## 🚀 Cách sử dụng (Local)
 
 ### 1. Cài đặt
 
@@ -261,6 +265,37 @@ uvicorn main_mobile:app --host 0.0.0.0 --port 8000
 
 ```
 http://localhost:8000/docs
+```
+---
+
+## 🐳 Chạy bằng Docker (Mobile)
+
+Sử dụng Docker để triển khai nhanh hệ thống bao gồm API và SQL Server.
+
+### 1. Khởi chạy
+```bash
+docker-compose -f docker-compose.mobile.yml up -d --build
+```
+> [!IMPORTANT]
+> **Lưu ý (Troubleshooting):** Nếu lệnh trên thất bại (fail), hãy kiểm tra xem **Cổng (Port) 1433** có đang bị chiếm dụng bởi một process khác trên máy hay không. Nếu có, hãy xóa tiến trình đó và thử lại.
+
+### 2. Quản lý và Kiểm tra
+```bash
+# Xem danh sách image
+docker images
+
+# Xem log của API
+docker-compose -f docker-compose.mobile.yml logs -f
+
+# Kiểm tra dữ liệu trong SQL Server
+docker exec face_check_sqlserver /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P "YourStrong@Passw0rd" -C \
+  -Q "USE FaceCheckDB; SELECT id, user_id, name_user FROM faces"
+```
+
+### 3. Dừng hệ thống
+```bash
+docker-compose -f docker-compose.mobile.yml down
 ```
 
 ---
