@@ -1,136 +1,231 @@
-# Check-in System (Advanced FAS Edition)
+# 🎯 Face Recognition Check-in System
 
-A modern face recognition and authentication system integrated with **Face Anti-Spoofing (FAS)** technology to ensure maximum security and accuracy. This project provides a complete Full-stack solution, from an AI-powered Backend to an intuitive Frontend Dashboard.
-
----
-
-## 🚀 Key Features
-
-*   **Face Anti-Spoofing (FAS):** Integrated with **Silent-Face-Anti-Spoofing** (MiniFASNet). Detects and rejects spoofing attempts using photos, videos, or masks in real-time.
-*   **Accurate Face Recognition:** Powered by **InsightFace (ArcFace)** with the `buffalo_l` model, ensuring high precision even in varying lighting conditions.
-*   **Live Stream Processing:** Processes video streams via **WebSockets**, supporting real-time bounding box overlays and user information display with ultra-low latency.
-*   **Auth & User Management:**
-    *   **Enrollment:** Secure registration for new users with face sample collection (requires liveness check).
-    *   **Secure Check-in:** A dedicated check-in mode that performs simultaneous face recognition and liveness detection.
-*   **Dashboard & History:** Logs all check-in events with image evidence stored in the `data/evidence` directory.
+Hệ thống nhận diện khuôn mặt và chấm công sử dụng **InsightFace (ArcFace)** với tích hợp **Face Anti-Spoofing (FAS)**.
 
 ---
 
-## System Architecture
+## 📁 Cấu trúc thư mục
 
-```mermaid
-graph TD
-    A[Frontend React] <-->|WebSockets / REST| B[FastAPI Backend]
-    B --> C[Face Detector MTCNN/InsightFace]
-    C --> D[FAS Module Silent-FAS]
-    D --> E[Feature Extractor ArcFace]
-    E --> F[Recognition Cosine Similarity]
-    F --> G[(SQLite Database)]
+```
+FaceDetectAI/
+├── main.py                 # Entry point - Khởi động FastAPI server
+├── config.py               # Cấu hình hệ thống (thresholds, paths, device)
+├── requirements.txt        # Dependencies
+│
+├── api/                    # API Layer
+│   ├── routes.py           # Định nghĩa các endpoints
+│   ├── auth.py             # Xác thực người dùng
+│   └── schemas.py          # Pydantic models cho request/response
+│
+├── models/                 # AI Models & Business Logic
+│   ├── face_detector.py    # Phát hiện khuôn mặt (MTCNN)
+│   ├── face_recognizer.py  # Nhận diện khuôn mặt (ArcFace)
+│   ├── anti_spoofing.py    # Chống giả mạo (Silent-FAS)
+│   ├── quality_filter.py   # Đánh giá chất lượng ảnh
+│   ├── database.py         # Quản lý database khuôn mặt
+│   └── checkin_logger.py   # Ghi log check-in
+│
+├── utils/                  # Tiện ích
+│   ├── image_utils.py      # Xử lý ảnh
+│   └── geo_utils.py        # Tính toán vị trí GPS
+│
+├── data/                   # Lưu trữ dữ liệu
+│   ├── faces.db            # Database embeddings
+│   ├── checkins.db         # Database lịch sử check-in
+│   └── evidence/           # Ảnh bằng chứng check-in
+│
+└── libs/                   # Thư viện AI models
+    └── Silent-Face-Anti-Spoofing/  # FAS model weights
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## 🧠 Cấu trúc Model
 
-| Component | Technology |
-| :--- | :--- |
-| **Backend** | FastAPI, Python 3.10+, Uvicorn |
-| **AI Models** | InsightFace, OpenCV, ONNX Runtime, Silent-FAS |
-| **Database** | SQLite, aiosqlite (Async wrapper) |
-| **Frontend** | ReactJS, Vite, TailwindCSS, Lucide Icons |
-| **Communication** | REST API, WebSockets |
+### 1. Face Detector (`models/face_detector.py`)
+- **Model**: MTCNN (Multi-task Cascaded Convolutional Networks)
+- **Chức năng**: Phát hiện và căn chỉnh khuôn mặt trong ảnh
+- **Output**: Bounding box, 5 landmarks (mắt, mũi, miệng), confidence score
+
+### 2. Face Recognizer (`models/face_recognizer.py`)
+- **Model**: InsightFace ArcFace (`buffalo_l`)
+- **Chức năng**: Trích xuất embedding vector 512 chiều từ khuôn mặt
+- **So khớp**: Cosine similarity với ngưỡng `FR_THRESHOLD = 0.5`
+
+### 3. Anti-Spoofing (`models/anti_spoofing.py`)
+- **Model**: Silent-Face-Anti-Spoofing (MiniFASNet)
+- **Chức năng**: Phát hiện ảnh giả, video, mask
+- **Ngưỡng**: 
+  - `< 0.3` → Spoof (giả mạo)
+  - `> 0.7` → Real (thật)
 
 ---
 
-## Installation & Setup
+## 🔄 Luồng xử lý
 
-### 1. System Requirements
-*   **OS:** Linux (Ubuntu recommended) / Windows / macOS.
-*   **Python:** 3.8 - 3.12.
-*   **Node.js:** v18+.
-*   **Hardware:** Minimum 4GB RAM. NVIDIA GPU (CUDA) recommended for optimal performance.
+### Đăng ký khuôn mặt (`/api/v1/add_face`)
 
-### 2. Backend Setup
+```
+┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌──────────────┐    ┌──────────┐
+│  Upload     │───▶│ Face Detect  │───▶│ Anti-Spoof  │───▶│ Extract      │───▶│ Save to  │
+│  Image      │    │ (MTCNN)      │    │ (FAS)       │    │ Embedding    │    │ Database │
+└─────────────┘    └──────────────┘    └─────────────┘    └──────────────┘    └──────────┘
+                         │                   │                  │
+                         ▼                   ▼                  ▼
+                   Detect face,        Reject if         512-d vector
+                   align to 112x112    score < 0.3       (ArcFace)
+```
+
+### Check-in (`/api/v1/mobile_checkin`)
+
+```
+┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌──────────────┐    ┌──────────┐
+│  Upload     │───▶│ Verify       │───▶│ Face Detect │───▶│ Anti-Spoof   │───▶│ Face     │
+│  Image+GPS  │    │ Location     │    │ + Align     │    │ Check        │    │ Match    │
+└─────────────┘    └──────────────┘    └─────────────┘    └──────────────┘    └──────────┘
+                         │                                                          │
+                         ▼                                                          ▼
+                   Distance ≤ 1000m                                          Compare với DB
+                   từ công ty                                                Log kết quả
+```
+
+---
+
+## 🔌 API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/health` | Health Check |
+| `POST` | `/api/v1/add_face` | Add Face |
+| `GET` | `/api/v1/get_face/{user_id}` | Get Face |
+| `DELETE` | `/api/v1/delete_face/{user_id}` | Delete Face |
+| `POST` | `/api/v1/mobile_checkin` | Mobile Checkin |
+
+---
+
+### `GET /api/v1/health`
+Kiểm tra trạng thái hệ thống.
+
+```json
+// Response
+{
+  "status": "healthy",
+  "models_loaded": true,
+  "device": "cuda"
+}
+```
+
+---
+
+### `POST /api/v1/add_face`
+Đăng ký khuôn mặt mới với kiểm tra anti-spoofing.
+
+**Request:** `multipart/form-data`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | File | ✅ | Ảnh khuôn mặt |
+| `user_id` | String | ✅ | ID người dùng |
+| `name` | String | ❌ | Tên hiển thị |
+
+```json
+// Response
+{
+  "success": true,
+  "message": "Face added for user user123",
+  "fas_score": 0.85
+}
+```
+
+---
+
+### `GET /api/v1/get_face/{user_id}`
+Lấy thông tin khuôn mặt đã đăng ký.
+
+```json
+// Response
+{
+  "user_id": "user123",
+  "name": "Nguyen Van A",
+  "created_at": "2026-01-24T10:30:00"
+}
+```
+
+---
+
+### `DELETE /api/v1/delete_face/{user_id}`
+Xóa khuôn mặt khỏi database.
+
+```json
+// Response
+{
+  "success": true,
+  "message": "Face deleted for user user123"
+}
+```
+
+---
+
+### `POST /api/v1/mobile_checkin`
+Chấm công với xác thực khuôn mặt + GPS.
+
+**Request:** `multipart/form-data`
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | File | ✅ | Ảnh khuôn mặt |
+| `latitude` | Float | ✅ | Vĩ độ GPS |
+| `longitude` | Float | ✅ | Kinh độ GPS |
+| `expected_user_id` | String | ❌ | ID người dùng mong đợi |
+
+```json
+// Response
+{
+  "success": true,
+  "user_id": "user123",
+  "similarity": 0.89,
+  "fas_score": 0.92,
+  "location_verified": true,
+  "distance_meters": 50.5
+}
+```
+
+---
+
+## 🚀 Cách sử dụng
+
+### 1. Cài đặt
+
 ```bash
+# Clone và tạo môi trường
 git clone <repository_url>
-cd detection-face
-
-# Create virtual environment
+cd FaceDetectAI
 python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
+source venv/bin/activate
 
-# Install dependencies
+# Cài đặt dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Frontend Setup
+### 2. Chạy server
+
 ```bash
-cd frontend
-npm install
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-### 4. Running the Services
-Start both Backend and Frontend servers simultaneously:
+### 3. Truy cập API docs
 
-**Terminal 1 (Backend):**
-```bash
-source venv/bin/activate
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
-
-**Terminal 2 (Frontend):**
-```bash
-cd frontend
-npm run dev -- --port 3000
+http://localhost:8000/docs
 ```
 
 ---
 
-## Key API Endpoints
+## ⚙️ Cấu hình (`config.py`)
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/v1/auth/register` | Register new user + Face enrollment |
-| `POST` | `/api/v1/auth/login` | System authentication |
-| `POST` | `/api/v1/checkin_fas` | Secure check-in (Recognition + FAS) |
-| `GET` | `/api/v1/history` | Fetch check-in history |
-| `GET` | `/docs` | Interactive Swagger UI documentation |
-
----
-
-## Advanced Configuration (`config.py`)
-
-Customize system behavior in `config.py`:
-*   `RECOGNITION_THRESHOLD`: Recognition sensitivity (default `0.5`).
-*   `FAS_THRESHOLD`: Anti-spoofing threshold (default `0.9`).
-*   `DEVICE`: Toggle between `cpu` and `cuda`.
-
----
-
-## Troubleshooting
-
-> [!IMPORTANT]
-> **Camera Issues:** Ensure the browser has camera permissions and no other application is currently using the camera.
-
-> [!TIP]
-> **Performance:** If running on CPU, consider reducing frame size or using lite models located in the `models/` directory.
-
-> [!WARNING]
-> **FAS Rejections:** If real faces are frequently rejected, check lighting conditions (avoid backlighting) and ensure the user is 40-60cm away from the camera.
-
----
-
-## Directory Structure
-
-```text
-/detection-face
-├── api/                # Endpoints, Schemas, and Business Logic
-├── models/             # Core AI (Detector, Recognizer, FAS Module)
-├── streaming/          # WebSocket Stream Processor
-├── data/               # Persistent Storage (DB and Evidence images)
-├── frontend/           # React Frontend Source Code
-├── libs/               # Supporting Libraries & AI Models
-├── main.py             # API Entry Point
-└── config.py           # System Configuration & Thresholds
-```
+| Tham số | Giá trị | Mô tả |
+|---------|---------|-------|
+| `FR_THRESHOLD` | `0.5` | Ngưỡng nhận diện khuôn mặt |
+| `FAS_ACCEPT_THRESHOLD` | `0.7` | Ngưỡng chấp nhận anti-spoofing |
+| `FAS_REJECT_THRESHOLD` | `0.3` | Ngưỡng từ chối anti-spoofing |
+| `MAX_CHECKIN_DISTANCE` | `1000` | Khoảng cách tối đa (mét) |
+| `CHECKIN_COOLDOWN_MINUTES` | `5` | Cooldown giữa các lần check-in |
+| `DEVICE` | auto | `cuda` nếu có GPU, `cpu` nếu không |
